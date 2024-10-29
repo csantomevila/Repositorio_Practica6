@@ -1,0 +1,328 @@
+1. Network creada en Docker
+
+bash
+
+christian@christian-VirtualBox:~/Docker$ docker network inspect bind9_subnet 
+[
+    {
+        "Name": "bind9_subnet",
+        "Id": "ef5c911f15e82b5a9b59c0d1b8bc9fc49746ab040ae542b8f79b1e12d2312e0e",
+        "Created": "2024-10-25T17:50:55.279860915+02:00",
+        "Scope": "local",
+        "Driver": "bridge",
+        "EnableIPv6": false,
+        "IPAM": {
+            "Driver": "default",
+            "Options": {},
+            "Config": [
+                {
+                    "Subnet": "172.28.0.0/16",
+                    "IPRange": "172.28.5.0/24",
+                    "Gateway": "172.28.5.254"
+                }
+            ]
+        },
+        "Internal": false,
+        "Attachable": false,
+        "Ingress": false,
+        "ConfigFrom": {
+            "Network": ""
+        },
+        "ConfigOnly": false,
+        "Containers": {
+            "e704f2970d1441762ab7fa0890d8e6666447628f7e98dd038eb3db82036bf27a": {
+                "Name": "cliente",
+                "EndpointID": "09f0ccbe06e3de2d88a4ada147511d94eeb8ae54319f37a396f358ee84847d99",
+                "MacAddress": "02:42:ac:1c:05:02",
+                "IPv4Address": "172.28.5.2/16",
+                "IPv6Address": ""
+            }
+        },
+        "Options": {},
+        "Labels": {}
+    }
+]
+
+
+
+
+
+
+
+
+2. Configuración final del archivo docker-compose.yml
+
+
+
+
+yaml
+
+version: '3.8'  # Si decides usar la versión del archivo
+
+services:
+  asir_bind9:
+    container_name: asir_bind9
+    image: ubuntu/bind9  # Imagen genérica de Docker para BIND9
+    platform: linux/amd64  # Especificamos la plataforma
+    ports:
+      - "53:53/tcp"  # Puerto TCP
+      - "53:53/udp"  # Puerto UDP
+    networks:
+      bind9_subnet:
+        ipv4_address: 172.28.5.1  # Dirección IP específica para el contenedor
+    volumes:
+      - ./conf:/etc/bind  # Monta la configuración
+      - ./zonas:/var/lib/bind  # Monta las zonas
+
+  cliente:
+    container_name: cliente
+    image: alpine  # Contenedor cliente que usa Ubuntu
+    platform: linux/amd64  # Especificamos la plataforma
+    tty: true  # Mantiene la terminal abierta
+    stdin_open: true  # Permite la entrada de stdin
+    dns:
+      - 172.28.5.1  # Dirección IP del servidor DNS
+    networks:
+      bind9_subnet:
+        ipv4_address: 172.28.5.2  # Dirección IP específica para el cliente
+
+networks:
+  bind9_subnet:
+    external: true  # Usamos una red existente
+
+
+
+
+
+
+
+
+3. Fichero bind9_subnet.json
+
+bash
+
+christian@christian-VirtualBox:~/Docker$ cat bind9_subnet.json 
+{
+    "Name": "bind9_subnet",
+    "Id": "bd54d0ecc242f9d9ba4ef483a44a2221fcfdb09663886afc21a3b5c167dc5a11",
+    "Created": "2023-10-10T06:28:58.162307359Z",
+    "Scope": "local",
+    "Driver": "bridge",
+    "EnableIPv6": false,
+    "IPAM": {
+        "Driver": "default",
+        "Options": {},
+        "Config": [
+            {
+                "Subnet": "172.28.0.0/16",
+                "IPRange": "172.28.5.0/24",
+                "Gateway": "172.28.5.254"
+            }
+        ]
+    },
+    "Internal": false,
+    "Attachable": false,
+    "Ingress": false,
+    "ConfigFrom": {
+        "Network": ""
+    },
+    "ConfigOnly": false,
+    "Containers": {},
+    "Options": {},
+    "Labels": {}
+}
+
+
+
+
+
+
+
+4. Ficheros de configuración de Docker
+
+
+
+
+4.1. Configuración de zona local
+
+bash
+
+christian@christian-VirtualBox:~/Docker/config$ cat named.conf.local
+zone "asircastelao.int" {
+	type master;
+	file "/var/lib/bind/db.asircastelao.int";
+	allow-query {
+		any;
+		};
+	};
+
+4.2. Zonas por defecto
+
+bash
+
+christian@christian-VirtualBox:~/Docker/config$ cat named.conf.default-zones 
+// prime the server with knowledge of the root servers
+zone "." {
+	type hint;
+	file "/usr/share/dns/root.hints";
+};
+
+// be authoritative for the localhost forward and reverse zones, and for
+// broadcast zones as per RFC 1912
+
+zone "localhost" {
+	type master;
+	file "/etc/bind/db.local";
+};
+
+zone "127.in-addr.arpa" {
+	type master;
+	file "/etc/bind/db.127";
+};
+
+zone "0.in-addr.arpa" {
+	type master;
+	file "/etc/bind/db.0";
+};
+
+zone "255.in-addr.arpa" {
+	type master;
+	file "/etc/bind/db.255";
+};
+
+4.3. Archivo named.conf
+
+bash
+
+christian@christian-VirtualBox:~/Docker/config$ cat named.conf
+include "/etc/bind/named.conf.options";
+include "/etc/bind/named.conf.local";
+
+4.4. Archivo db.127
+
+bash
+
+christian@christian-VirtualBox:~/Docker/config$ cat db.127
+$TTL    604800
+@       IN      SOA     localhost. root.localhost. (
+                              2         ; Serial
+                         604800         ; Refresh
+                          86400         ; Retry
+                        2419200         ; Expire
+                         604800 )       ; Negative Cache TTL
+;
+@       IN      NS      localhost.
+1       IN      PTR     localhost.
+
+
+
+
+
+
+5. Iniciar docker-compose
+
+bash
+
+christian@christian-VirtualBox:~/Docker$ docker-compose up -d
+WARN[0000] /home/christian/Docker/docker-compose.yml: the attribute `version` is obsolete, it will be ignored, please remove it to avoid potential confusion 
+[+] Running 4/4
+ ✔ asir_bind9 Pulled                                                                       14.6s 
+   ✔ 63d049b2edcb Pull complete                                                            10.3s 
+   ✔ 628b314bec1f Pull complete                                                            12.4s 
+   ✔ d8dd8249bef1 Pull complete                                                            12.4s 
+WARN[0014] Found orphan containers ([docker_app_1 docker_db_1 docker_web_1]) for this project. If you removed or renamed this service in your compose file, you can run this command with the --remove-orphans flag to clean it up. 
+[+] Running 1/2
+ ⠧ Container asir_bind9  Starting                                                           0.6s 
+ ✔ Container cliente     Started                                                            0.6s 
+Error response from daemon: driver failed programming external connectivity on endpoint asir_bind9 (d8a7f6e2694b1de75853b7bad65b969d6971dd8a2d8e5dbc1fd1448d5aecb312): Error starting userland proxy: listen tcp4 0.0.0.0:53: bind: address already in use
+
+
+
+
+
+6. Inicio de Contenedor Cliente e Instalación de Git y Bind
+
+bash
+
+root@christian-VirtualBox:~# docker exec cliente sh
+
+/ # echo "nameserver 8.8.8.8" > /etc/resolv.conf
+/ # apk add --no-cache bind-tools
+fetch https://dl-cdn.alpinelinux.org/alpine/v3.20/main/x86_64/APKINDEX.tar.gz
+fetch https://dl-cdn.alpinelinux.org/alpine/v3.20/community/x86_64/APKINDEX.tar.gz
+(1/14) Installing fstrm (0.6.1-r4)
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+7. Resultado del dig a google.com
+
+7. Resultado del dig a google.com
+
+bash
+
+/ # dig google.com
+
+; <<>> DiG 9.18.27 <<>> google.com
+;; global options: +cmd
+;; Got answer:
+;; ->>HEADER<<- opcode: QUERY, status: NOERROR, id: 40302
+;; flags: qr rd ra; QUERY: 1, ANSWER: 1, AUTHORITY: 0, ADDITIONAL: 1
+
+;; OPT PSEUDOSECTION:
+; EDNS: version: 0, flags:; udp: 1220
+; COOKIE: eee897dca47d03ec5aa3268467213c251029d2c33804c721 (good)
+;; QUESTION SECTION:
+;google.com.			IN	A
+
+;; ANSWER SECTION:
+google.com.		177	IN	A	142.250.200.110
+
+;; Query time: 4 msec
+;; SERVER: 8.8.8.8#53(8.8.8.8) (UDP)
+;; WHEN: Tue Oct 29 19:34:25 UTC 2024
+;; MSG SIZE  rcvd: 83
+
+/ # 
+
+/ # ping google.com
+PING google.com (142.250.185.14): 56 data bytes
+64 bytes from 142.250.185.14: seq=0 ttl=61 time=16.850 ms
+64 bytes from 142.250.185.14: seq=1 ttl=61 time=16.112 ms
+64 bytes from 142.250.185.14: seq=2 ttl=61 time=16.335 ms
+
+
+8-Resultados finales
+
+dig @172.28.5.1 asircastelao.int
+
+
+; <<>> DiG 9.18.27 <<>> asircastelao.int
+;; global options: +cmd
+;; Got answer:
+;; ->>HEADER<<- opcode: QUERY, status: NOERROR, ...
+;; QUESTION SECTION:
+;asircastelao.int.          IN  A
+
+;; ANSWER SECTION:
+asircastelao.int.    604800  IN  A   172.28.5.1
+
+
+
+
+
+
+
+
+
